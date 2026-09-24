@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplikasi Toko Perlengkapan Sekolah</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans">
+
+    <!-- HALAMAN LOGIN / AUTH -->
+    <div id="auth-screen" class="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-500 to-indigo-600 p-4">
+        <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md">
+            <div class="text-center mb-6">
+                <i class="fa-solid fa-school text-4xl text-blue-600 mb-2"></i>
+                <h1 class="text-2xl font-bold text-gray-900">Toko Perlengkapan Sekolah</h1>
+                <p class="text-sm text-gray-500">Silakan login untuk mengelola inventaris</p>
+            </div>
+
+            <form id="login-form" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                    <input type="email" id="login-email" required class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                    <input type="password" id="login-password" required class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg transition duration-200">
+                    Login
+                </button>
+            </form>
+            <div id="auth-error" class="mt-4 text-sm text-red-500 text-center hidden"></div>
+        </div>
+    </div>
+
+    <!-- HALAMAN UTAMA APLIKASI (DASHBOARD) -->
+    <div id="app-screen" class="hidden min-h-screen flex flex-col">
+        <!-- Navbar -->
+        <header class="bg-white shadow-sm border-b px-6 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <i class="fa-solid fa-box-archive text-2xl text-blue-600"></i>
+                <h2 class="text-xl font-bold text-gray-800">Inventaris Toko Sekolah</h2>
+            </div>
+            <div class="flex items-center space-x-4">
+                <span id="user-email-display" class="text-sm text-gray-600 font-medium"></span>
+                <button id="logout-btn" class="bg-red-50 hover:bg-red-100 text-red-600 px-4 py-2 rounded-lg text-sm font-medium transition">
+                    <i class="fa-solid fa-right-from-bracket mr-1"></i> Logout
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="flex-1 max-w-7xl w-full mx-auto p-6 space-y-6">
+            
+            <!-- Statistik Singkat -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-white p-5 rounded-xl shadow-sm border flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500 font-medium">Total Jenis Barang</p>
+                        <h3 id="stat-total-items" class="text-2xl font-bold text-gray-800">0</h3>
+                    </div>
+                    <div class="p-3 bg-blue-50 text-blue-600 rounded-lg text-xl"><i class="fa-solid fa-tags"></i></div>
+                </div>
+                <div class="bg-white p-5 rounded-xl shadow-sm border flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500 font-medium">Total Stok Keseluruhan</p>
+                        <h3 id="stat-total-stock" class="text-2xl font-bold text-gray-800">0</h3>
+                    </div>
+                    <div class="p-3 bg-green-50 text-green-600 rounded-lg text-xl"><i class="fa-solid fa-cubes"></i></div>
+                </div>
+                <div class="bg-white p-5 rounded-xl shadow-sm border flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500 font-medium">Nilai Inventaris (Rp)</p>
+                        <h3 id="stat-total-value" class="text-xl font-bold text-gray-800">Rp 0</h3>
+                    </div>
+                    <div class="p-3 bg-amber-50 text-amber-600 rounded-lg text-xl"><i class="fa-solid fa-wallet"></i></div>
+                </div>
+            </div>
+
+            <!-- Kontrol Aksi & Tabel -->
+            <div class="bg-white rounded-xl shadow-sm border p-6">
+                <div class="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
+                    <div class="w-full md:w-1/3">
+                        <input type="text" id="search-input" placeholder="Cari nama barang..." class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                    </div>
+                    <div class="flex flex-wrap gap-2 w-full md:w-auto justify-end">
+                        <button onclick="openModal('add')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center">
+                            <i class="fa-solid fa-plus mr-2"></i> Tambah Barang
+                        </button>
+                        <button onclick="exportToExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center">
+                            <i class="fa-solid fa-file-excel mr-2"></i> Export Laporan (.xls)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Tabel Data Barang -->
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-gray-100 text-gray-600 text-xs uppercase tracking-wider">
+                                <th class="p-3">Gambar</th>
+                                <th class="p-3">Nama Barang</th>
+                                <th class="p-3">Kategori</th>
+                                <th class="p-3">Harga (Rp)</th>
+                                <th class="p-3">Stok</th>
+                                <th class="p-3">Masuk / Keluar</th>
+                                <th class="p-3 text-center">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="product-table-body" class="divide-y divide-gray-200 text-sm">
+                            <!-- Data akan dimuat via JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- MODAL TAMBAH / EDIT BARANG -->
+    <div id="product-modal" class="fixed inset-0 bg-black/50 hidden flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-xl shadow-lg w-full max-w-lg p-6">
+            <h3 id="modal-title" class="text-lg font-bold text-gray-800 mb-4">Tambah Barang Baru</h3>
+            <form id="product-form" class="space-y-4">
+                <input type="hidden" id="product-id">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Nama Barang</label>
+                    <input type="text" id="p-name" required class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Kategori</label>
+                    <select id="p-category" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="Buku & Tulis">Buku & Tulis</option>
+                        <option value="Seragam">Seragam</option>
+                        <option value="Tas & Sepatu">Tas & Sepatu</option>
+                        <option value="Alat Tulis">Alat Tulis</option>
+                        <option value="Lainnya">Lainnya</option>
+                    </select>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Harga (Rp)</label>
+                        <input type="number" id="p-price" required min="0" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Stok Awal</label>
+                        <input type="number" id="p-stock" required min="0" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Upload Gambar (Pilih File atau URL)</label>
+                    <input type="file" id="p-image-file" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 mb-2">
+                    <input type="text" id="p-image-url" placeholder="Atau masukkan URL gambar..." class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-xs">
+                </div>
+                <div class="flex justify-end space-x-3 pt-4">
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium">Batal</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium">Simpan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL TRANSAKSI MASUK / KELUAR -->
+    <div id="trx-modal" class="fixed inset-0 bg-black/50 hidden flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-xl shadow-lg w-full max-w-md p-6">
+            <h3 id="trx-title" class="text-lg font-bold text-gray-800 mb-4">Barang Masuk / Keluar</h3>
+            <form id="trx-form" class="space-y-4">
+                <input type="hidden" id="trx-product-id">
+                <input type="hidden" id="trx-type">
+                <div>
+                    <p id="trx-item-info" class="text-sm font-medium text-gray-600 mb-2"></p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Jumlah</label>
+                    <input type="number" id="trx-qty" required min="1" value="1" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="flex justify-end space-x-3 pt-4">
+                    <button type="button" onclick="closeTrxModal()" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium">Batal</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium">Proses</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- SCRIPT FIREBASE & LOGIKA APLIKASI -->
+    <script type="module">
+        // Import Firebase SDK versi modular
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // ==========================================
+        // GANTI DENGAN KONFIGURASI FIREBASE ANDA DI SINI
+        // ==========================================
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_AUTH_DOMAIN",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_STORAGE_BUCKET",
+            messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+
+        // Inisialisasi Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // State Global
+        let productsData = [];
+
+        // DOM Elements
+        const authScreen = document.getElementById('auth-screen');
+        const appScreen = document.getElementById('app-screen');
+        const loginForm = document.getElementById('login-form');
+        const loginError = document.getElementById('auth-error');
+        const logoutBtn = document.getElementById('logout-btn');
+        const userEmailDisplay = document.getElementById('user-email-display');
+        const productTableBody = document.getElementById('product-table-body');
+        const searchInput = document.getElementById('search-input');
+
+        // Monitor Status Auth
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                authScreen.classList.add('hidden');
+                appScreen.classList.remove('hidden');
+                userEmailDisplay.textContent = user.email;
+                loadProducts();
+            } else {
+                authScreen.classList.remove('hidden');
+                appScreen.classList.add('hidden');
+            }
+        });
+
+        // Handler Login
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
+            loginError.classList.add('hidden');
+
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+            } catch (error) {
+                loginError.textContent = "Login Gagal: " + error.message;
+                loginError.classList.remove('hidden');
+            }
+        });
+
+        // Handler Logout
+        logoutBtn.addEventListener('click', async () => {
+            await signOut(auth);
+        });
+
+        // Fungsi Load Data dari Firestore
+        async function loadProducts() {
+            try {
+                const querySnapshot = await getDocs(collection(db, "products"));
+                productsData = [];
+                querySnapshot.forEach((docSnap) => {
+                    productsData.push({ id: docSnap.id, ...docSnap.data() });
+                });
+                renderTable(productsData);
+                updateStats();
+            } catch (error) {
+                console.error("Gagal memuat produk: ", error);
+            }
+        }
+
+        // Render Tabel
+        function renderTable(data) {
+            productTableBody.innerHTML = '';
+            if (data.length === 0) {
+                productTableBody.innerHTML = `<tr><td colspan="7" class="text-center py-6 text-gray-400">Belum ada data barang.</td></tr>`;
+                return;
+            }
+
+            data.forEach(item => {
+                const imgTag = item.image ? `<img src="${item.image}" class="w-12 h-12 object-cover rounded-lg border">` : `<div class="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 text-xs">No Img</div>`;
+                
+                productTableBody.innerHTML += `
+                    <tr class="hover:bg-gray-50 transition">
+                        <td class="p-3">${imgTag}</td>
+                        <td class="p-3 font-medium text-gray-800">${item.name}</td>
+                        <td class="p-3"><span class="px-2.5 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-semibold">${item.category}</span></td>
+                        <td class="p-3">Rp ${Number(item.price).toLocaleString('id-ID')}</td>
+                        <td class="p-3 font-bold text-gray-700">${item.stock}</td>
+                        <td class="p-3 space-x-1">
+                            <button onclick="openTrxModal('${item.id}', 'in')" class="px-2 py-1 bg-green-100 text-green-700 hover:bg-green-200 rounded text-xs font-medium" title="Barang Masuk"><i class="fa-solid fa-plus"></i> Masuk</button>
+                            <button onclick="openTrxModal('${item.id}', 'out')" class="px-2 py-1 bg-orange-100 text-orange-700 hover:bg-orange-200 rounded text-xs font-medium" title="Barang Keluar"><i class="fa-solid fa-minus"></i> Keluar</button>
+                        </td>
+                        <td class="p-3 text-center space-x-2">
+                            <button onclick="openModal('edit', '${item.id}')" class="text-blue-600 hover:text-blue-800" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
+                            <button onclick="deleteProduct('${item.id}')" class="text-red-600 hover:text-red-800" title="Hapus"><i class="fa-solid fa-trash"></i></button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        // Statistik Ringkas
+        function updateStats() {
+            const totalItems = productsData.length;
+            const totalStock = productsData.reduce((sum, item) => sum + Number(item.stock), 0);
+            const totalValue = productsData.reduce((sum, item) => sum + (Number(item.price) * Number(item.stock)), 0);
+
+            document.getElementById('stat-total-items').textContent = totalItems;
+            document.getElementById('stat-total-stock').textContent = totalStock;
+            document.getElementById('stat-total-value').textContent = 'Rp ' + totalValue.toLocaleString('id-ID');
+        }
+
+        // Pencarian Barang
+        searchInput.addEventListener('input', (e) => {
+            const keyword = e.target.value.toLowerCase();
+            const filtered = productsData.filter(item => item.name.toLowerCase().includes(keyword));
+            renderTable(filtered);
+        });
+
+        // Modal Produk (Tambah / Edit)
+        window.openModal = async function(mode, id = null) {
+            document.getElementById('product-modal').classList.remove('hidden');
+            const form = document.getElementById('product-form');
+            form.reset();
+            
+            if (mode === 'add') {
+                document.getElementById('modal-title').textContent = 'Tambah Barang Baru';
+                document.getElementById('product-id').value = '';
+            } else {
+                document.getElementById('modal-title').textContent = 'Edit Barang';
+                document.getElementById('product-id').value = id;
+                const item = productsData.find(p => p.id === id);
+                if (item) {
+                    document.getElementById('p-name').value = item.name;
+                    document.getElementById('p-category').value = item.category;
+                    document.getElementById('p-price').value = item.price;
+                    document.getElementById('p-stock').value = item.stock;
+                    document.getElementById('p-image-url').value = item.image || '';
+                }
+            }
+        }
+
+        window.closeModal = function() {
+            document.getElementById('product-modal').classList.add('hidden');
+        }
+
+        // Handle Submit Form Produk
+        document.getElementById('product-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('product-id').value;
+            const name = document.getElementById('p-name').value;
+            const category = document.getElementById('p-category').value;
+            const price = Number(document.getElementById('p-price').value);
+            const stock = Number(document.getElementById('p-stock').value);
+            let imageUrl = document.getElementById('p-image-url').value;
+
+            const imageFile = document.getElementById('p-image-file').files[0];
+            
+            // Konversi file gambar lokal ke Base64 jika diupload
+            if (imageFile) {
+                const reader = new FileReader();
+                reader.onload = async function(uploadEvent) {
+                    imageUrl = uploadEvent.target.result;
+                    await saveProductToFirestore(id, { name, category, price, stock, image: imageUrl });
+                };
+                reader.readAsDataURL(imageFile);
+            } else {
+                await saveProductToFirestore(id, { name, category, price, stock, image: imageUrl });
+            }
+        });
+
+        async function saveProductToFirestore(id, data) {
+            try {
+                if (id) {
+                    await updateDoc(doc(db, "products", id), data);
+                } else {
+                    await addDoc(collection(db, "products"), data);
+                }
+                closeModal();
+                loadProducts();
+            } catch (error) {
+                console.error("Gagal menyimpan data:", error);
+                alert("Terjadi kesalahan saat menyimpan data.");
+            }
+        }
+
+        // Hapus Produk
+        window.deleteProduct = async function(id) {
+            if (confirm("Apakah Anda yakin ingin menghapus barang ini?")) {
+                try {
+                    await deleteDoc(doc(db, "products", id));
+                    loadProducts();
+                } catch (error) {
+                    console.error("Gagal menghapus:", error);
+                }
+            }
+        }
+
+        // Modal Transaksi Masuk / Keluar
+        window.openTrxModal = function(id, type) {
+            document.getElementById('trx-modal').classList.remove('hidden');
+            document.getElementById('trx-product-id').value = id;
+            document.getElementById('trx-type').value = type;
+            const item = productsData.find(p => p.id === id);
+            
+            document.getElementById('trx-title').textContent = type === 'in' ? 'Tambah Barang Masuk' : 'Kurangi Barang Keluar';
+            document.getElementById('trx-item-info').textContent = `Barang: ${item.name} (Stok Saat Ini: ${item.stock})`;
+            document.getElementById('trx-qty').value = 1;
+        }
+
+        window.closeTrxModal = function() {
+            document.getElementById('trx-modal').classList.add('hidden');
+        }
+
+        document.getElementById('trx-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('trx-product-id').value;
+            const type = document.getElementById('trx-type').value;
+            const qty = Number(document.getElementById('trx-qty').value);
+
+            const item = productsData.find(p => p.id === id);
+            let newStock = type === 'in' ? Number(item.stock) + qty : Number(item.stock) - qty;
+
+            if (newStock < 0) {
+                alert("Stok tidak boleh kurang dari 0!");
+                return;
+            }
+
+            try {
+                await updateDoc(doc(db, "products", id), { stock: newStock });
+                closeTrxModal();
+                loadProducts();
+            } catch (error) {
+                console.error("Gagal memperbarui stok:", error);
+            }
+        });
+
+        // Export Laporan ke Excel (.xls format HTML table)
+        window.exportToExcel = function() {
+            let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+            <head><meta charset="utf-8"><title>Laporan Toko Perlengkapan Sekolah</title></head>
+            <body>
+            <h2>Laporan Inventaris Toko Perlengkapan Sekolah</h2>
+            <table border="1">
+                <thead>
+                    <tr style="background-color: #f2f2f2;">
+                        <th>Nama Barang</th>
+                        <th>Kategori</th>
+                        <th>Harga (Rp)</th>
+                        <th>Stok</th>
+                        <th>Total Nilai (Rp)</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+
+            let totalSum = 0;
+            productsData.forEach(item => {
+                const subtotal = Number(item.price) * Number(item.stock);
+                totalSum += subtotal;
+                html += `<tr>
+                    <td>${item.name}</td>
+                    <td>${item.category}</td>
+                    <td>${item.price}</td>
+                    <td>${item.stock}</td>
+                    <td>${subtotal}</td>
+                </tr>`;
+            });
+
+            html += `<tr><td colspan="4" style="font-weight:bold; text-align:right;">Total Nilai Inventaris:</td><td style="font-weight:bold;">${totalSum}</td></tr>`;
+            html += `</tbody></table></body></html>`;
+
+            const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Laporan_Toko_Sekolah_${new Date().toISOString().slice(0,10)}.xls`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+    </script>
+</body>
+</html>
