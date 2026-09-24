@@ -10,6 +10,10 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Firebase SDK (compat) -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
     <!-- Google Fonts Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script>
@@ -96,7 +100,7 @@
                     <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">Email Pengguna</label>
                     <div class="relative">
                         <i class="fas fa-envelope absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                        <input type="email" id="auth-email" required class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-navy-500 text-sm" placeholder="pemilik@tokoseragam.com" value="admin@tokoseragam.com">
+                        <input type="email" id="auth-email" required class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-navy-500 text-sm" placeholder="pemilik@tokoseragam.com" autocomplete="email">
                     </div>
                 </div>
 
@@ -104,23 +108,28 @@
                     <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">Kata Sandi</label>
                     <div class="relative">
                         <i class="fas fa-lock absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                        <input type="password" id="auth-password" required class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-navy-500 text-sm" placeholder="••••••••" value="password123">
+                        <input type="password" id="auth-password" required class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-navy-500 text-sm" placeholder="••••••••" minlength="6" autocomplete="current-password">
                     </div>
                 </div>
 
                 <div class="flex items-center justify-between text-xs text-slate-500">
                     <label class="flex items-center space-x-2 cursor-pointer">
-                        <input type="checkbox" checked class="rounded text-navy-800 focus:ring-navy-500">
+                        <input type="checkbox" id="auth-remember" checked class="rounded text-navy-800 focus:ring-navy-500">
                         <span>Ingat Saya</span>
                     </label>
                     <a href="#" onclick="showToast('Sistem', 'Silakan hubungi administrator pusat', 'info')" class="text-navy-500 hover:underline">Lupa password?</a>
                 </div>
 
                 <button type="submit" id="auth-submit-btn" class="w-full py-3 bg-navy-800 hover:bg-navy-900 text-white font-semibold rounded-xl shadow-lg transition duration-200 flex items-center justify-center space-x-2">
-                    <span>Masuk ke Dashboard</span>
+                    <span id="auth-submit-label">Masuk ke Dashboard</span>
                     <i class="fas fa-arrow-right text-xs"></i>
                 </button>
             </form>
+
+            <p class="text-center text-xs text-slate-500 mt-4">
+                <span id="auth-toggle-text">Belum punya akun?</span>
+                <a href="#" id="auth-toggle-link" onclick="toggleAuthMode(event)" class="text-navy-500 font-semibold hover:underline">Daftar di sini</a>
+            </p>
 
             <div class="mt-6 pt-6 border-t border-slate-100 text-center">
                 <button onclick="loginAsGuest()" class="text-xs font-medium text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-4 py-2 rounded-lg transition">
@@ -705,7 +714,7 @@
     </div>
 
     <script>
-// Ganti dengan konfigurasi Firebase milikmu dari Step 2
+// Konfigurasi Firebase
 const firebaseConfig = {
   apiKey: "AIzaSyADrKHIzRX-miLpiAgZrHzIrIorGWrpa_I",
   authDomain: "toko-midn.firebaseapp.com",
@@ -715,16 +724,25 @@ const firebaseConfig = {
   appId: "1:319557536448:web:23ebc4cd6fc1a1e6b6bb25",
   measurementId: "G-PRWCJP1DRM"
 };
-        const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
 
-// Inisialisasi Firebase
-if (!firebase.apps.length) {
-  firebase.initializeApp(firebaseConfig);
+// Inisialisasi Firebase (dibungkus try/catch supaya kalau gagal, aplikasi tetap jalan)
+let auth = null;
+let db = null;
+let firebaseReady = false;
+try {
+  if (typeof firebase === 'undefined') {
+    throw new Error('Firebase SDK gagal dimuat. Cek koneksi internet.');
+  }
+  if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+  }
+  auth = firebase.auth();
+  db = firebase.firestore();
+  firebaseReady = true;
+} catch (err) {
+  console.error('Inisialisasi Firebase gagal:', err);
 }
-const auth = firebase.auth();
-const db = firebase.firestore();
-        
+
         // Default Mock Initial Products tailored for Indonesian School Uniform Store
         const initialProducts = [
             { id: '1', sku: 'SD-PUTIH-S', name: 'Baju Putih SD Lengan Pendek', category: 'SD', size: 'S', buyPrice: 32000, sellPrice: 48000, stock: 25 },
@@ -780,24 +798,119 @@ const db = firebase.firestore();
             
             initCharts();
             updateAllDashboardViews();
+            initAuthListener();
         });
 
         // Authentication Handlers
-        function handleAuth(e) {
-            e.preventDefault();
-            const email = document.getElementById('auth-email').value;
+        let authMode = 'login'; // 'login' | 'register'
+
+        function authErrorMessage(err) {
+            const map = {
+                'auth/invalid-email': 'Format email tidak valid.',
+                'auth/user-not-found': 'Akun tidak ditemukan. Klik "Daftar di sini" untuk membuat akun.',
+                'auth/wrong-password': 'Kata sandi salah.',
+                'auth/invalid-credential': 'Email atau kata sandi salah (atau akun belum dibuat).',
+                'auth/invalid-login-credentials': 'Email atau kata sandi salah (atau akun belum dibuat).',
+                'auth/user-disabled': 'Akun ini dinonaktifkan.',
+                'auth/email-already-in-use': 'Email sudah terdaftar. Silakan masuk.',
+                'auth/weak-password': 'Kata sandi terlalu lemah (minimal 6 karakter).',
+                'auth/too-many-requests': 'Terlalu banyak percobaan. Coba lagi beberapa menit lagi.',
+                'auth/network-request-failed': 'Koneksi internet bermasalah.',
+                'auth/operation-not-allowed': 'Metode Email/Password belum diaktifkan di Firebase Console (Authentication > Sign-in method).',
+                'auth/unauthorized-domain': 'Domain ini belum diizinkan. Tambahkan di Firebase Console > Authentication > Settings > Authorized domains.',
+                'auth/operation-not-supported-in-this-environment': 'Buka lewat http://localhost atau hosting, bukan dengan klik ganda file (file://).',
+                'auth/api-key-not-valid.-please-pass-a-valid-api-key.': 'API key Firebase tidak valid.',
+                'auth/invalid-api-key': 'API key Firebase tidak valid.'
+            };
+            return map[err.code] || ((err.code || 'error') + ': ' + (err.message || 'Terjadi kesalahan.'));
+        }
+
+        function enterApp(email) {
             currentUser = { email: email };
-            
             document.getElementById('user-display-email').innerText = email;
             document.getElementById('user-avatar-initial').innerText = email.charAt(0).toUpperCase();
-            
             document.getElementById('auth-screen').classList.add('hidden');
             document.getElementById('app-shell').classList.remove('hidden');
-            showToast('Selamat Datang', 'Login berhasil ke Toko Seragam Bintang', 'success');
+            const badge = document.getElementById('firebase-status-badge');
+            if (badge) {
+                badge.innerText = 'Firebase Auth Terhubung';
+                badge.className = 'px-2 py-0.5 rounded font-medium bg-emerald-100 text-emerald-800';
+            }
+        }
+
+        function toggleAuthMode(e) {
+            if (e) e.preventDefault();
+            authMode = authMode === 'login' ? 'register' : 'login';
+            const isReg = authMode === 'register';
+            document.getElementById('auth-submit-label').innerText = isReg ? 'Buat Akun & Masuk' : 'Masuk ke Dashboard';
+            document.getElementById('auth-toggle-text').innerText = isReg ? 'Sudah punya akun?' : 'Belum punya akun?';
+            document.getElementById('auth-toggle-link').innerText = isReg ? 'Masuk di sini' : 'Daftar di sini';
+            document.getElementById('auth-password').autocomplete = isReg ? 'new-password' : 'current-password';
+        }
+
+        function initAuthListener() {
+            if (location.protocol === 'file:') {
+                console.warn('Halaman dibuka via file://. Firebase Auth tidak bisa berjalan di sini; gunakan http://localhost atau hosting.');
+            }
+            if (!firebaseReady) return;
+            // Otomatis masuk kembali kalau sesi login masih tersimpan
+            auth.onAuthStateChanged(user => {
+                if (user) {
+                    enterApp(user.email);
+                } else if (currentUser && !currentUser.demo) {
+                    document.getElementById('auth-screen').classList.remove('hidden');
+                    document.getElementById('app-shell').classList.add('hidden');
+                }
+            });
+        }
+
+        async function handleAuth(e) {
+            e.preventDefault();
+            if (!firebaseReady) {
+                showToast('Firebase Belum Siap', 'SDK gagal dimuat. Cek internet, atau gunakan Mode Demo.', 'error');
+                return;
+            }
+            if (location.protocol === 'file:') {
+                showToast('Tidak Bisa Login', authErrorMessage({ code: 'auth/operation-not-supported-in-this-environment' }), 'error');
+                return;
+            }
+
+            const email = document.getElementById('auth-email').value.trim();
+            const password = document.getElementById('auth-password').value;
+            const remember = document.getElementById('auth-remember').checked;
+            const btn = document.getElementById('auth-submit-btn');
+            const label = document.getElementById('auth-submit-label');
+            const oldLabel = label.innerText;
+
+            btn.disabled = true;
+            btn.classList.add('opacity-70');
+            label.innerText = 'Memproses...';
+
+            try {
+                await auth.setPersistence(remember
+                    ? firebase.auth.Auth.Persistence.LOCAL
+                    : firebase.auth.Auth.Persistence.SESSION);
+
+                let cred;
+                if (authMode === 'register') {
+                    cred = await auth.createUserWithEmailAndPassword(email, password);
+                } else {
+                    cred = await auth.signInWithEmailAndPassword(email, password);
+                }
+                enterApp(cred.user.email);
+                showToast('Selamat Datang', 'Login berhasil ke Toko Seragam Bintang', 'success');
+            } catch (err) {
+                console.error('Auth error:', err.code, err.message);
+                showToast(authMode === 'register' ? 'Pendaftaran Gagal' : 'Login Gagal', authErrorMessage(err), 'error');
+            } finally {
+                btn.disabled = false;
+                btn.classList.remove('opacity-70');
+                label.innerText = oldLabel;
+            }
         }
 
         function loginAsGuest() {
-            currentUser = { email: 'pemilik.demo@tokoseragam.com' };
+            currentUser = { email: 'pemilik.demo@tokoseragam.com', demo: true };
             document.getElementById('user-display-email').innerText = currentUser.email;
             document.getElementById('user-avatar-initial').innerText = 'P';
             document.getElementById('auth-screen').classList.add('hidden');
@@ -805,7 +918,12 @@ const db = firebase.firestore();
             showToast('Mode Demo Activated', 'Anda dapat mencoba seluruh fitur sistem.', 'info');
         }
 
-        function handleLogout() {
+        async function handleLogout() {
+            try {
+                if (firebaseReady && auth.currentUser) await auth.signOut();
+            } catch (err) {
+                console.error('Logout error:', err);
+            }
             currentUser = null;
             document.getElementById('auth-screen').classList.remove('hidden');
             document.getElementById('app-shell').classList.add('hidden');
