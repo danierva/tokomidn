@@ -821,7 +821,7 @@ try {
             return map[err.code] || ((err.code || 'error') + ': ' + (err.message || 'Terjadi kesalahan.'));
         }
 
-        function setSyncBadge(state) {
+        function setSyncBadge(state, extra = '') {
             const badge = document.getElementById('firebase-status-badge');
             if (!badge) return;
             const s = {
@@ -830,7 +830,7 @@ try {
                 connected: ['Firestore Realtime Terhubung', 'bg-emerald-100 text-emerald-800'],
                 error: ['Firestore Gagal Terhubung', 'bg-rose-100 text-rose-800']
             }[state];
-            badge.innerText = s[0];
+            badge.innerText = s[0] + extra;
             badge.className = 'px-2 py-0.5 rounded font-medium ' + s[1];
         }
 
@@ -845,11 +845,38 @@ try {
         }
 
         function refreshAllViews() {
-            renderInventoryTable();
-            renderPosGrid();
-            renderCart();
-            renderReportsTable();
-            updateAllDashboardViews();
+            [renderInventoryTable, renderPosGrid, renderCart, renderReportsTable, updateAllDashboardViews].forEach(fn => {
+                try { fn(); } catch (err) { console.error('Gagal menampilkan (' + fn.name + '):', err); }
+            });
+        }
+
+        // Rapikan data dari Firestore: field yang kosong/beda tipe diberi nilai bawaan,
+        // supaya satu dokumen yang tidak lengkap tidak merusak seluruh tampilan.
+        function toNum(v) { const n = Number(v); return isNaN(n) ? 0 : n; }
+        function normalizeProduct(id, d) {
+            return {
+                id: id,
+                sku: String(d.sku ?? d.SKU ?? d.kode ?? ''),
+                name: String(d.name ?? d.nama ?? d.namaBarang ?? '(tanpa nama)'),
+                category: String(d.category ?? d.kategori ?? ''),
+                size: String(d.size ?? d.ukuran ?? '-'),
+                buyPrice: toNum(d.buyPrice ?? d.hargaBeli),
+                sellPrice: toNum(d.sellPrice ?? d.hargaJual),
+                stock: toNum(d.stock ?? d.stok)
+            };
+        }
+        function normalizeTransaction(docId, t) {
+            return {
+                ...t,
+                id: t.id || docId,
+                timestamp: t.timestamp || '-',
+                items: Array.isArray(t.items) ? t.items : [],
+                subtotal: toNum(t.subtotal),
+                discount: toNum(t.discount),
+                total: toNum(t.total),
+                profit: toNum(t.profit),
+                method: t.method || '-'
+            };
         }
 
         function applyStoreSettings(d) {
@@ -902,14 +929,14 @@ try {
 
             unsubProducts = db.collection('products').onSnapshot(snap => {
                 products = snap.docs
-                    .map(d => ({ ...d.data(), id: d.id }))
+                    .map(d => normalizeProduct(d.id, d.data()))
                     .sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0));
-                setSyncBadge('connected');
+                setSyncBadge('connected', ` (${products.length} produk)`);
                 refreshAllViews();
             }, onSyncError);
 
             unsubTransactions = db.collection('transactions').orderBy('createdAtMs', 'desc').limit(500).onSnapshot(snap => {
-                transactions = snap.docs.map(d => d.data());
+                transactions = snap.docs.map(d => normalizeTransaction(d.id, d.data()));
                 refreshAllViews();
             }, onSyncError);
 
