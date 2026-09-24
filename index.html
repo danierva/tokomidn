@@ -531,6 +531,7 @@
             </div>
 
             <!-- TAB 5: SETTINGS & FIREBASE CONFIG -->
+            
             <div id="tab-settings" class="tab-content p-6 space-y-6 hidden">
                 <div class="max-w-3xl mx-auto bg-white rounded-2xl border border-slate-200/80 shadow-sm p-6 space-y-6">
                     <div>
@@ -704,6 +705,26 @@
     </div>
 
     <script>
+// Ganti dengan konfigurasi Firebase milikmu dari Step 2
+const firebaseConfig = {
+  apiKey: "AIzaSyADrKHIzRX-miLpiAgZrHzIrIorGWrpa_I",
+  authDomain: "toko-midn.firebaseapp.com",
+  projectId: "toko-midn",
+  storageBucket: "toko-midn.firebasestorage.app",
+  messagingSenderId: "319557536448",
+  appId: "1:319557536448:web:23ebc4cd6fc1a1e6b6bb25",
+  measurementId: "G-PRWCJP1DRM"
+};
+        const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+
+// Inisialisasi Firebase
+if (!firebase.apps.length) {
+  firebase.initializeApp(firebaseConfig);
+}
+const auth = firebase.auth();
+const db = firebase.firestore();
+        
         // Default Mock Initial Products tailored for Indonesian School Uniform Store
         const initialProducts = [
             { id: '1', sku: 'SD-PUTIH-S', name: 'Baju Putih SD Lengan Pendek', category: 'SD', size: 'S', buyPrice: 32000, sellPrice: 48000, stock: 25 },
