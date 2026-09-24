@@ -575,7 +575,7 @@
                                     <span class="text-slate-600">Mode Sinkronisasi:</span>
                                     <span id="firebase-status-badge" class="px-2 py-0.5 rounded font-medium bg-amber-100 text-amber-800">In-Memory Local Mode (Demo)</span>
                                 </div>
-                                <p class="text-[11px] text-slate-500">Aplikasi ini secara otomatis berjalan langsung menggunakan penyimpanan *in-memory* yang aman. Apabila Firebase Config disediakan di lingkungan runtime, data akan otomatis tersinkronkan secara *realtime*.</p>
+                                <p class="text-[11px] text-slate-500">Login dengan akun Firebase agar produk, transaksi, dan pengaturan toko tersimpan di Firestore dan tersinkron secara realtime. Mode Demo hanya menyimpan data di memori (hilang saat halaman di-refresh).</p>
                             </div>
                         </div>
 
@@ -790,6 +790,7 @@ try {
         let salesChart = null;
         let stockChart = null;
         let currentUser = null;
+        const demoTransactions = transactions.slice();
 
         // Initialize Application
         window.addEventListener('DOMContentLoaded', () => {
@@ -800,6 +801,134 @@ try {
             updateAllDashboardViews();
             initAuthListener();
         });
+
+        // ===== Sinkronisasi Firestore =====
+        let unsubProducts = null, unsubTransactions = null, unsubSettings = null, syncUid = null;
+
+        // true kalau user login sungguhan (bukan Mode Demo) dan Firebase siap
+        function isCloud() {
+            return firebaseReady && !!auth.currentUser && !(currentUser && currentUser.demo);
+        }
+
+        function firestoreErrorMessage(err) {
+            const map = {
+                'permission-denied': 'Akses ditolak. Pastikan database Firestore sudah dibuat dan Rules mengizinkan user yang login (request.auth != null).',
+                'failed-precondition': 'Database Firestore belum dibuat. Buka Firebase Console > Firestore Database > Create database.',
+                'not-found': 'Database Firestore belum dibuat. Buka Firebase Console > Firestore Database > Create database.',
+                'unavailable': 'Firestore tidak bisa dijangkau. Cek koneksi internet.',
+                'unauthenticated': 'Anda belum login.'
+            };
+            return map[err.code] || ((err.code || 'error') + ': ' + (err.message || 'Terjadi kesalahan.'));
+        }
+
+        function setSyncBadge(state) {
+            const badge = document.getElementById('firebase-status-badge');
+            if (!badge) return;
+            const s = {
+                local: ['In-Memory Local Mode (Demo)', 'bg-amber-100 text-amber-800'],
+                connecting: ['Menghubungkan ke Firestore...', 'bg-sky-100 text-sky-800'],
+                connected: ['Firestore Realtime Terhubung', 'bg-emerald-100 text-emerald-800'],
+                error: ['Firestore Gagal Terhubung', 'bg-rose-100 text-rose-800']
+            }[state];
+            badge.innerText = s[0];
+            badge.className = 'px-2 py-0.5 rounded font-medium ' + s[1];
+        }
+
+        // Jalankan penulisan ke Firestore; tampilkan toast sukses/gagal setelah server menjawab
+        function cloudWrite(promise, okTitle, okMsg) {
+            return promise.then(() => {
+                if (okTitle) showToast(okTitle, okMsg, 'success');
+            }).catch(err => {
+                console.error('Firestore write error:', err.code, err.message);
+                showToast('Gagal Menyimpan ke Firestore', firestoreErrorMessage(err), 'error');
+            });
+        }
+
+        function refreshAllViews() {
+            renderInventoryTable();
+            renderPosGrid();
+            renderCart();
+            renderReportsTable();
+            updateAllDashboardViews();
+        }
+
+        function applyStoreSettings(d) {
+            if (!d) return;
+            if (d.name !== undefined) {
+                document.getElementById('setting-store-name').value = d.name;
+                document.getElementById('receipt-store-name').innerText = String(d.name).toUpperCase();
+            }
+            if (d.phone !== undefined) document.getElementById('setting-store-phone').value = d.phone;
+            if (d.address !== undefined) {
+                document.getElementById('setting-store-address').value = d.address;
+                document.getElementById('receipt-store-addr').innerText = d.address;
+            }
+        }
+
+        async function startCloudSync() {
+            if (!isCloud()) return;
+            const uid = auth.currentUser.uid;
+            if (syncUid === uid) return; // sudah berjalan
+            stopCloudSync(false);
+            syncUid = uid;
+            setSyncBadge('connecting');
+
+            const onSyncError = (err) => {
+                console.error('Firestore sync error:', err.code, err.message);
+                setSyncBadge('error');
+                showToast('Firestore Gagal', firestoreErrorMessage(err), 'error');
+            };
+
+            try {
+                // Pertama kali dipakai: isi database dengan data contoh + info toko
+                const storeRef = db.collection('settings').doc('store');
+                const storeSnap = await storeRef.get();
+                if (!storeSnap.exists) {
+                    const batch = db.batch();
+                    initialProducts.forEach(pr => batch.set(db.collection('products').doc(pr.id), pr));
+                    batch.set(storeRef, {
+                        name: document.getElementById('setting-store-name').value,
+                        phone: document.getElementById('setting-store-phone').value,
+                        address: document.getElementById('setting-store-address').value
+                    });
+                    await batch.commit();
+                }
+            } catch (err) {
+                syncUid = null;
+                onSyncError(err);
+                return;
+            }
+            if (syncUid !== uid) return; // user keburu logout
+
+            unsubProducts = db.collection('products').onSnapshot(snap => {
+                products = snap.docs
+                    .map(d => ({ ...d.data(), id: d.id }))
+                    .sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0));
+                setSyncBadge('connected');
+                refreshAllViews();
+            }, onSyncError);
+
+            unsubTransactions = db.collection('transactions').orderBy('createdAtMs', 'desc').limit(500).onSnapshot(snap => {
+                transactions = snap.docs.map(d => d.data());
+                refreshAllViews();
+            }, onSyncError);
+
+            unsubSettings = db.collection('settings').doc('store').onSnapshot(doc => {
+                if (doc.exists) applyStoreSettings(doc.data());
+            }, onSyncError);
+        }
+
+        function stopCloudSync(resetData = true) {
+            [unsubProducts, unsubTransactions, unsubSettings].forEach(u => { if (u) u(); });
+            unsubProducts = unsubTransactions = unsubSettings = null;
+            syncUid = null;
+            if (resetData) {
+                products = JSON.parse(JSON.stringify(initialProducts));
+                transactions = demoTransactions.slice();
+                setSyncBadge('local');
+                refreshAllViews();
+            }
+        }
 
         // Authentication Handlers
         let authMode = 'login'; // 'login' | 'register'
@@ -831,11 +960,7 @@ try {
             document.getElementById('user-avatar-initial').innerText = email.charAt(0).toUpperCase();
             document.getElementById('auth-screen').classList.add('hidden');
             document.getElementById('app-shell').classList.remove('hidden');
-            const badge = document.getElementById('firebase-status-badge');
-            if (badge) {
-                badge.innerText = 'Firebase Auth Terhubung';
-                badge.className = 'px-2 py-0.5 rounded font-medium bg-emerald-100 text-emerald-800';
-            }
+            startCloudSync();
         }
 
         function toggleAuthMode(e) {
@@ -858,6 +983,7 @@ try {
                 if (user) {
                     enterApp(user.email);
                 } else if (currentUser && !currentUser.demo) {
+                    stopCloudSync();
                     document.getElementById('auth-screen').classList.remove('hidden');
                     document.getElementById('app-shell').classList.add('hidden');
                 }
@@ -920,6 +1046,7 @@ try {
 
         async function handleLogout() {
             try {
+                stopCloudSync();
                 if (firebaseReady && auth.currentUser) await auth.signOut();
             } catch (err) {
                 console.error('Logout error:', err);
@@ -1012,6 +1139,13 @@ try {
         function quickAddStock(productId) {
             const prod = products.find(p => p.id === productId);
             if (prod) {
+                if (isCloud()) {
+                    cloudWrite(
+                        db.collection('products').doc(productId).update({ stock: firebase.firestore.FieldValue.increment(10) }),
+                        'Stok Diperbarui', `Berhasil menambah 10 pcs stok ${prod.name}`
+                    );
+                    return;
+                }
                 prod.stock += 10;
                 showToast('Stok Diperbarui', `Berhasil menambah 10 pcs stok ${prod.name}`, 'success');
                 updateAllDashboardViews();
@@ -1177,15 +1311,21 @@ try {
             const buyPrice = parseInt(document.getElementById('product-buy-price').value);
             const sellPrice = parseInt(document.getElementById('product-sell-price').value);
 
-            if (id) {
-                // Update
+            if (isCloud()) {
+                const docId = id || Date.now().toString();
+                cloudWrite(
+                    db.collection('products').doc(docId).set({ id: docId, sku, category, name, size, stock, buyPrice, sellPrice }),
+                    'Berhasil', id ? 'Data produk berhasil diperbarui di Firestore' : 'Produk baru tersimpan di Firestore'
+                );
+            } else if (id) {
+                // Update (mode demo)
                 const index = products.findIndex(p => p.id === id);
                 if (index !== -1) {
                     products[index] = { id, sku, category, name, size, stock, buyPrice, sellPrice };
                     showToast('Berhasil', 'Data produk berhasil diperbarui', 'success');
                 }
             } else {
-                // Create
+                // Create (mode demo)
                 const newProduct = {
                     id: Date.now().toString(),
                     sku, category, name, size, stock, buyPrice, sellPrice
@@ -1201,6 +1341,10 @@ try {
 
         function deleteProduct(productId) {
             if (confirm('Apakah Anda yakin ingin menghapus produk seragam ini?')) {
+                if (isCloud()) {
+                    cloudWrite(db.collection('products').doc(productId).delete(), 'Dihapus', 'Produk berhasil dihapus dari inventaris');
+                    return;
+                }
                 products = products.filter(p => p.id !== productId);
                 showToast('Dihapus', 'Produk berhasil dihapus dari inventaris', 'info');
                 renderInventoryTable();
@@ -1372,7 +1516,7 @@ try {
             const dateStr = now.toISOString().slice(0, 10) + ' ' + now.toTimeString().slice(0, 5);
 
             const newTransaction = {
-                id: `TRX-${Math.floor(1000 + Math.random() * 9000)}`,
+                id: `TRX-${Date.now().toString().slice(-7)}`,
                 timestamp: dateStr,
                 items: [...cart],
                 subtotal,
@@ -1391,6 +1535,17 @@ try {
             });
 
             transactions.unshift(newTransaction);
+
+            // Simpan transaksi + stok terbaru ke Firestore dalam satu batch
+            if (isCloud()) {
+                const batch = db.batch();
+                batch.set(db.collection('transactions').doc(newTransaction.id), { ...newTransaction, createdAtMs: Date.now() });
+                cart.forEach(ci => {
+                    const pr = products.find(prod => prod.id === ci.id);
+                    if (pr) batch.update(db.collection('products').doc(pr.id), { stock: pr.stock });
+                });
+                cloudWrite(batch.commit());
+            }
 
             // Show Printable Receipt Modal
             openReceiptModal(newTransaction);
@@ -1484,7 +1639,15 @@ try {
             const storeAddr = document.getElementById('setting-store-address').value;
             document.getElementById('receipt-store-name').innerText = storeName.toUpperCase();
             document.getElementById('receipt-store-addr').innerText = storeAddr;
-            showToast('Pengaturan Disimpan', 'Informasi toko berhasil diubah', 'success');
+            if (isCloud()) {
+                const storePhone = document.getElementById('setting-store-phone').value;
+                cloudWrite(
+                    db.collection('settings').doc('store').set({ name: storeName, phone: storePhone, address: storeAddr }, { merge: true }),
+                    'Pengaturan Disimpan', 'Informasi toko berhasil disimpan ke Firestore'
+                );
+            } else {
+                showToast('Pengaturan Disimpan', 'Informasi toko berhasil diubah (mode demo, tidak disimpan)', 'success');
+            }
         }
 
         // Helper Utility Functions
