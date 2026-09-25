@@ -1167,6 +1167,9 @@ try {
             const prod = products.find(p => p.id === productId);
             if (prod) {
                 if (isCloud()) {
+                    // Optimistic update: tambah stok di tampilan LANGSUNG, jangan tunggu onSnapshot
+                    prod.stock += 10;
+                    updateAllDashboardViews();
                     cloudWrite(
                         db.collection('products').doc(productId).update({ stock: firebase.firestore.FieldValue.increment(10) }),
                         'Stok Diperbarui', `Berhasil menambah 10 pcs stok ${prod.name}`
@@ -1340,8 +1343,19 @@ try {
 
             if (isCloud()) {
                 const docId = id || Date.now().toString();
+                const productData = { id: docId, sku, category, name, size, stock, buyPrice, sellPrice };
+
+                // Optimistic update: perbarui tampilan LANGSUNG, jangan tunggu onSnapshot,
+                // supaya tabel tidak terlihat "kosong"/tidak berubah walau data sudah tersimpan.
+                const index = products.findIndex(p => p.id === docId);
+                if (index !== -1) {
+                    products[index] = productData;
+                } else {
+                    products.push(productData);
+                }
+
                 cloudWrite(
-                    db.collection('products').doc(docId).set({ id: docId, sku, category, name, size, stock, buyPrice, sellPrice }),
+                    db.collection('products').doc(docId).set(productData),
                     'Berhasil', id ? 'Data produk berhasil diperbarui di Firestore' : 'Produk baru tersimpan di Firestore'
                 );
             } else if (id) {
@@ -1369,6 +1383,10 @@ try {
         function deleteProduct(productId) {
             if (confirm('Apakah Anda yakin ingin menghapus produk seragam ini?')) {
                 if (isCloud()) {
+                    // Optimistic update: hapus dari tampilan LANGSUNG, jangan tunggu onSnapshot
+                    products = products.filter(p => p.id !== productId);
+                    renderInventoryTable();
+                    updateAllDashboardViews();
                     cloudWrite(db.collection('products').doc(productId).delete(), 'Dihapus', 'Produk berhasil dihapus dari inventaris');
                     return;
                 }
